@@ -87,8 +87,6 @@ GatewayId=RF-SE-CORE
 Port=5500
 Peers= SE,NO,DL,SE-1
 
-
-
 [TrunkPeer#SE]
 Host=127.0.0.1
 Port=5500
@@ -101,7 +99,7 @@ TrunkTypeSend=B
 
 
 [TrunkPeer#NO]
-Host=10.0.92.113
+Host=
 Port=5500
 Port=5500
 TGRule=^.*$
@@ -113,7 +111,7 @@ TrunkTypeSend=B
 
 
 [TrunkPeer#DL]
-Host=10.0.92.115
+Host=
 Port=5500
 Port=5500
 TGRule=^.*$
@@ -125,7 +123,7 @@ TrunkTypeSend=B
 Key= #Cypto key
 
 [TrunkPeer#SE-1]
-Host=10.0.92.115
+Host=
 Port=5500
 Port=5500
 TGRule=^.*$
@@ -134,4 +132,4 @@ ActiveFilter=1
 TrunkType=B
 TrunkTypeSend=A
 #TgMapFile=/etc/svxlink/tg_mapping.csv
-Key=AA23234123454!
+Key=213123213124w
