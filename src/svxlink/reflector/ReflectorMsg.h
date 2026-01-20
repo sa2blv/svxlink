@@ -1443,6 +1443,90 @@ class MsgUdpAudio : public ReflectorUdpMsgBase<101>
     std::vector<uint8_t> m_audio_data;
 }; /* MsgUdpAudio */
 
+/**
+@brief   A namespace for stautsmessages
+@author  Peter Lundberg /SA2BLV
+@date    2025-01-10
+
+This is the message used to transmit audio to the other side of trunk.
+*/
+
+class MsgUdpAudio_trunk : public ReflectorUdpMsgBase<101>
+{
+  public:
+    MsgUdpAudio_trunk(void) {}
+    MsgUdpAudio_trunk(const std::vector<uint8_t>& audio_data)
+      : m_audio_data(audio_data) {}
+    MsgUdpAudio_trunk(const void *buf, int count)
+    {
+      if (count > 0)
+      {
+        const uint8_t *bbuf = reinterpret_cast<const uint8_t*>(buf);
+        m_audio_data.assign(bbuf, bbuf+count);
+      }
+    }
+    std::vector<uint8_t>& audioData(void) { return m_audio_data; }
+    const std::vector<uint8_t>& audioData(void) const { return m_audio_data; }
+
+    ASYNC_MSG_MEMBERS(m_audio_data, tg,Talker)
+    int tg =0;
+    std::string Talker;
+  private:
+    std::vector<uint8_t> m_audio_data;
+
+   
+}; /* MsgUdpAudio_trunk */
+
+
+/**
+@brief   A namespace for stautsmessages
+@author  Peter Lundberg /SA2BLV
+@date    2025-01-10
+
+This namespace hold some constants, types and classes that are used when
+forming ciphered UDP datagrams.
+*/
+
+class MSG_Trunk_Change : public ReflectorMsgBase<130>
+{
+
+ public:    
+    int talker_status =0;
+    int qsy=0;
+    int tg;
+    int new_tg;
+    std::string talker;
+   
+
+    ASYNC_MSG_MEMBERS(talker_status,qsy,tg,new_tg,talker);
+
+  private:
+ 
+}; /* class MSG_Trunk_Change */
+
+/**
+@brief   A namespace for to tell the other sid what talkgroups i want to listen to 
+It is nedded on smaler/ Local reflektors to save  on trafic 
+@author  Peter Lundberg /SA2BLV
+@date    2025-01-10
+
+This namespace hold some constants, types and classes that are used when
+forming ciphered UDP datagrams.
+*/
+class MSG_Trunk_tg_subsribe : public ReflectorMsgBase<131>
+{
+public:
+    std::string trunkid; // Ipadress of the trunk
+    std::vector<int> Talkgroups;   // <-- list of ints
+
+    ASYNC_MSG_MEMBERS(trunkid,Talkgroups);
+};
+
+
+
+
+
+
 
 /**
 @brief	 Audio flush UDP network message
@@ -1486,6 +1570,10 @@ struct MsgUdpSignalStrengthValues
 {
   ASYNC_MSG_MEMBERS(m_rxs)
 }; /* MsgUdpSignalStrengthValues */
+
+
+
+
 
 
 /**

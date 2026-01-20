@@ -327,6 +327,8 @@ void ReflectorClient::sendUdpMsg(const ReflectorUdpMsg &msg)
 
   m_udp_heartbeat_tx_cnt = UDP_HEARTBEAT_TX_CNT_RESET;
 
+
+
   (void)m_reflector->sendUdpDatagram(this, msg);
 } /* ReflectorClient::sendUdpMsg */
 
@@ -909,6 +911,8 @@ void ReflectorClient::handleTgMonitor(std::istream& is)
   cout << "]" << endl;
 
   setMonitoredTGs(tgs);
+  m_reflector->send_trunk_tg_filter_message();
+
 } /* ReflectorClient::handleTgMonitor */
 
 
@@ -1420,6 +1424,7 @@ void ReflectorClient::setMonitoredTGs(const std::set<uint32_t>& tgs)
       monitored_tgs.append(tg);
     }
   }
+
 } /* ReflectorClient::setMonitoredTGs */
 
 
@@ -1453,6 +1458,7 @@ void ReflectorClient::setTg(uint32_t tg)
   }
 
   updateIsTalker();
+  m_reflector->send_trunk_tg_filter_message();
 } /* ReflectorClient::setTg */
 
 

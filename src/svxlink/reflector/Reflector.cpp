@@ -1,4 +1,4 @@
-/**
+﻿/**
 @file	 Reflector.cpp
 @brief   The main reflector class
 @author  Tobias Blomberg / SM0SVX
@@ -67,6 +67,11 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #include "Reflector.h"
 #include "ReflectorClient.h"
 #include "TGHandler.h"
+#include "ReflectorTrunkManager.h"
+#include "MsgTrunkQso.h"
+#include "TGHandler.h"
+#include "ReflectorClientUdp.h"
+
 
 
 /****************************************************************************
@@ -273,6 +278,7 @@ Reflector::~Reflector(void)
   m_client_con_map.clear();
   ReflectorClient::cleanup();
   delete TGHandler::instance();
+  delete ReflectorTrunkManager::instance();
 } /* Reflector::~Reflector */
 
 
@@ -280,6 +286,14 @@ bool Reflector::initialize(Async::Config &cfg)
 {
   m_cfg = &cfg;
   TGHandler::instance()->setConfig(m_cfg);
+
+    
+  ReflectorTrunkManager::instance()->setConfig(m_cfg);
+  ReflectorTrunkManager::instance()->init();
+  //trunkMgr = std::make_unique<ReflectorTrunkManager>();
+
+  
+  
 
   std::string listen_port("5300");
   cfg.getValue("GLOBAL", "LISTEN_PORT", listen_port);
@@ -349,6 +363,8 @@ bool Reflector::initialize(Async::Config &cfg)
     m_http_server->clientDisconnected.connect(
         sigc::mem_fun(*this, &Reflector::httpClientDisconnected));
   }
+  
+ 
 
     // Path for command PTY
   string pty_path;
@@ -371,9 +387,86 @@ bool Reflector::initialize(Async::Config &cfg)
   m_cfg->getValue("GLOBAL", "ACCEPT_CERT_EMAIL", m_accept_cert_email);
 
   m_cfg->valueUpdated.connect(sigc::mem_fun(*this, &Reflector::cfgUpdated));
+  
+  
 
+/* trunk port */
+uint16_t udp_listen_port_trunk = 0;
+
+ m_cfg->getValue("ReflectorTrunk", "Port", udp_listen_port_trunk);
+
+  
+cout << "Trunk port is on "<< udp_listen_port_trunk <<"\r\n";
+trunk_sock = new UdpSocket(udp_listen_port_trunk);
+trunk_sock->dataReceived.connect(mem_fun(*this, &Reflector::on_trunk_udp_data_recived));
+
+
+/*
+
+
+Trunk_tcp = new TcpServer<>(std::to_string(udp_listen_port_trunk));
+Trunk_tcp->clientConnected.connect(
+mem_fun(*this, &Reflector::Trunk_onClientConnected));
+Trunk_tcp->clientDisconnected.connect(
+      mem_fun(*this, &Reflector::Trunk_onClientDisconnected));
+      
+*/
+  ReflectorTrunkManager::instance()->send_hello();
   return true;
 } /* Reflector::initialize */
+
+
+
+    
+    void Reflector::Trunk_onClientConnected(TcpConnection *con)
+    {
+      cout << "Client " << con->remoteHost() << ":"
+           << con->remotePort() << " connected, "
+           << Trunk_tcp->numberOfClients() << " clients connected\n";
+        // We need ONLY to add signal for receive data to the TcpConnection
+      con->dataReceived.connect(mem_fun(*this, &Reflector::Trunk_onDataReceived));
+        // Send welcome message to the connected client */
+      con->write("Hello, client!\n", 15);
+    }
+    
+    void Reflector::Trunk_onClientDisconnected(TcpConnection *con, TcpConnection::DisconnectReason reason)
+    {
+      cout << "Client " << con->remoteHost().toString() << ":"
+           << con->remotePort() << " disconnected,"
+           << Trunk_tcp->numberOfClients() << " clients connected\n";
+      /* Don't delete the con object, the TcpServer will do it */
+    }
+    
+    int Reflector::Trunk_onDataReceived(TcpConnection *con, void *buf, int count)
+    {
+        // retreive data
+      char *str = static_cast<char *>(buf);
+      string data(str, str+count);
+      cout << data;
+      
+        // Send data back to sender
+      string dataOut = string("You said: ") + data;
+      Trunk_tcp->writeOnly(con, dataOut.c_str(), dataOut.size());
+      
+        // Other way to send to sender
+      //con->write(dataOut.c_str(), dataOut.size());
+      
+        // Send to other clients if there is more then one connected to server
+      if (Trunk_tcp->numberOfClients() > 1)
+      {
+          // Send data back to all OTHER clients
+        dataOut = string("He said : ") + data;
+        Trunk_tcp->writeExcept(con, dataOut.c_str(), dataOut.size());
+        
+          // Send data back to all clients
+        dataOut = string("To all  : ") + data;
+        Trunk_tcp->writeAll(dataOut.c_str(), dataOut.size());
+      }
+      return count;
+    }
+    
+    
+    
 
 
 void Reflector::nodeList(std::vector<std::string>& nodes) const
@@ -404,6 +497,18 @@ void Reflector::broadcastMsg(const ReflectorMsg& msg,
   }
 } /* Reflector::broadcastMsg */
 
+
+void Reflector::broadcastMsg_from_trunk(const ReflectorUdpMsg& msg)
+{
+  for (const auto& item : m_client_con_map)
+  {
+    ReflectorClient *client = item.second;
+    if (client->conState() == ReflectorClient::STATE_CONNECTED)
+    {
+      client->sendUdpMsg(msg);
+    }
+  }
+} /* Reflector::broadcastMsg */
 
 bool Reflector::sendUdpDatagram(ReflectorClient *client,
     const ReflectorUdpMsg& msg)
@@ -443,8 +548,7 @@ bool Reflector::sendUdpDatagram(ReflectorClient *client,
 } /* Reflector::sendUdpDatagram */
 
 
-void Reflector::broadcastUdpMsg(const ReflectorUdpMsg& msg,
-                                const ReflectorClient::Filter& filter)
+void Reflector::broadcastUdpMsg(const ReflectorUdpMsg& msg, const ReflectorClient::Filter& filter)
 {
   for (const auto& item : m_client_con_map)
   {
@@ -481,6 +585,26 @@ void Reflector::requestQsy(ReflectorClient *client, uint32_t tg)
       ReflectorClient::mkAndFilter(
         ge_v2_client_filter,
         ReflectorClient::TgFilter(current_tg)));
+        //qsy
+        
+  
+      MSG_Trunk_Change msg_trunk;
+    msg_trunk.talker_status=4;
+    msg_trunk.tg =current_tg;
+    msg_trunk.new_tg = tg;
+
+    
+    // create a audio poaket to trunk
+
+    ReflectorUdpMsgV2 header(msg_trunk.type(), client->clientId(),
+    client->udpCipherIVCntrNext() & 0xffff);
+    ostringstream ss;
+    assert(header.pack(ss) && msg_trunk.pack(ss));
+    ReflectorTrunkManager::instance()->handleOutgoingAudio(tg,ss);
+    
+    
+  
+        
 } /* Reflector::requestQsy */
 
 
@@ -863,6 +987,9 @@ void Reflector::clientConnected(Async::FramedTcpConnection *con)
   ReflectorClient *client = new ReflectorClient(this, con, m_cfg);
   con->verifyPeer.connect(sigc::mem_fun(*this, &Reflector::onVerifyPeer));
   m_client_con_map[con] = client;
+
+
+
 } /* Reflector::clientConnected */
 
 
@@ -894,14 +1021,20 @@ void Reflector::clientDisconnected(Async::FramedTcpConnection *con,
     broadcastMsg(MsgNodeLeft(client->callsign()),
         ReflectorClient::ExceptFilter(client));
   }
+
+
+
   //Application::app().runTask([=]{ delete client; });
   delete client;
+  
+
 } /* Reflector::clientDisconnected */
 
 
-bool Reflector::udpCipherDataReceived(const IpAddress& addr, uint16_t port,
-                                      void *buf, int count)
+bool Reflector::udpCipherDataReceived(const IpAddress& addr, uint16_t port, void *buf, int count)
 {
+
+
   if ((count <= 0) || (static_cast<size_t>(count) < UdpCipher::AADLEN))
   {
     std::cout << "### : Ignoring too short UDP datagram (" << count
@@ -975,6 +1108,255 @@ bool Reflector::udpCipherDataReceived(const IpAddress& addr, uint16_t port,
   return false;
 } /* Reflector::udpCipherDataReceived */
 
+void Reflector::on_trunk_udp_data_recived(const IpAddress& addr, uint16_t port, void *buf, int count)
+{
+    /*
+   if(ReflectorTrunkManager::instance()->is_ip_allowed(  addr.toString())  == 0)
+   {
+    return ;
+   }
+
+  ReflectorUdpMsg header;
+
+
+
+  
+  stringstream ss;
+  ss.write(reinterpret_cast<const char *>(buf), static_cast<size_t>(count));
+  ReflectorUdpMsgV2 header_v2a;
+
+  */
+
+    if (!ReflectorTrunkManager::instance()
+        ->is_ip_allowed(addr.toString())) {
+        return;
+    }
+
+    if (count <= 0) {
+        return;
+    }
+
+    // 🔑 Lookup key for this sender
+    std::string key = ReflectorTrunkManager::instance()->get_key(addr.toString());
+
+    std::vector<unsigned char> decoded;
+
+    if (key.empty()) {
+        // 🔹 No encryption
+        const unsigned char* p =
+            static_cast<const unsigned char*>(buf);
+        decoded.assign(p, p + count);
+    }
+    else {
+        //  Decrypt
+        decoded = ReflectorTrunkManager::instance()->decryptAES(buf, count, key);
+
+        if (decoded.empty()) {
+            std::cerr << "### Decryption failed from "
+                << addr << std::endl;
+            return;
+        }
+    }
+
+    //  Load decoded bytes into stream
+    std::stringstream ss;
+    ss.write(reinterpret_cast<const char*>(decoded.data()),
+        decoded.size());
+
+    // Your existing parsing code continues unchanged
+    ReflectorUdpMsg header;
+    ReflectorUdpMsgV2 header_v2a;
+
+
+
+
+  ss.seekg(0);
+  if (ss.str().find("hello") != std::string::npos) {
+
+
+      cout << "Hello message from trunk " << addr << ":" << port << endl;
+
+      // Send talkgroup message for filter
+      previousTGs_to_message.clear();
+      send_trunk_tg_filter_message();
+
+      return;
+  }
+
+
+
+  ss.seekg(0);
+  if (!header_v2a.unpack(ss))
+  {
+      cout << "*** WARNING: Unpacking message header failed for UDP datagram "
+          "from " << addr << ":" << port << endl;
+      return;
+  }
+
+  MSG_Trunk_tg_subsribe header_v4;
+  if (!header_v4.unpack(ss))
+  {
+//      cerr << "*** WARNING["
+//          << "]: Could not unpack Message_from_filter " << endl;
+
+  }
+  else
+  {
+      if (header_v4.type() == 131)
+      {
+    //      std::cout << "Message from " << header_v4.trunkid << endl;  
+          ReflectorTrunkManager::instance()->incomming_filter(header_v4.Talkgroups,header_v4.trunkid);
+
+//          return;
+      }
+  }
+
+  ss.seekg(0);
+  ReflectorUdpMsgV2 header_v2;
+  if (!header_v2.unpack(ss))
+  {
+    cout << "*** WARNING: Unpacking message header failed for UDP datagram "
+            "from " << addr << ":" << port << endl;
+    return;
+  }
+  
+
+    MsgUdpAudio_trunk msg;
+	if (!msg.unpack(ss))
+	{
+	//  cerr << "*** WARNING["
+	//       << "]: Could not unpack incoming MsgUdpAudioV1 message" << endl;
+	  return;
+	}
+	
+	// std::cout << "tg: " << msg.tg << ", msg.type: " << header_v2.type() << std::endl;
+
+
+	if (!msg.audioData().empty())
+	{
+
+	  	//broadcastMsg_from_trunk(msg);
+	   // Send message to local nodes	
+
+           msg.tg =  ReflectorTrunkManager::instance()->get_tg_from_dest_table(msg.tg,addr.toString());
+
+	   broadcastUdpMsg(msg,ReflectorClient::TgFilter( msg.tg));
+           // Send to other   
+//       ReflectorTrunkManager::instance()->handleOutgoingAudio_resend( msg.tg,  ss,  addr.toString() );
+        ReflectorTrunkManager::instance()->handleOutgoingAudio_resend_newmsg( msg.tg,  msg,  addr.toString() );
+
+
+           //Audio send
+                  
+	    return;
+	}
+	
+   //    ss.seekg(0);
+   
+
+    ss.seekg(0); 
+      
+
+      if (!header_v2.unpack(ss))
+      {
+        cout << "*** WARNING: Unpacking message header failed for UDP datagram "
+                "from " << addr << ":" << port << endl;
+        return;
+      }
+  
+  
+      
+       MSG_Trunk_Change header_v3;
+       if (!header_v3.unpack(ss))
+	{
+	  cerr << "*** WARNING["
+	       << "]: Could not unpack Pmsg " << endl;
+	  return;
+	}
+	
+
+  // std::cout <<"Packet data "<<  header_v3.talker_status << "tg"<< header_v3.tg <<  "talker" << header_v3.talker  << "\r\n";
+
+   if(header_v3.talker_status == 2)
+   {
+
+     header_v3.tg =  ReflectorTrunkManager::instance()->get_tg_from_dest_table(header_v3.tg,addr.toString());
+
+
+    broadcastMsg(MsgTalkerStart(header_v3.tg, header_v3.talker),
+        ReflectorClient::mkAndFilter(
+          ge_v2_client_filter,
+          ReflectorClient::mkOrFilter(
+            ReflectorClient::TgFilter(header_v3.tg),
+            ReflectorClient::TgMonitorFilter(header_v3.tg))));
+            
+	cout << header_v3.talker << ": Talker start on TG #" << header_v3.tg << endl;
+                
+    ReflectorTrunkManager::instance()->handleOutgoingAudio_resend_status_newmsg(header_v3.tg,  header_v3,  addr.toString() );
+
+            
+   }   
+   if(header_v3.talker_status == 1)
+   {
+    
+       /*broadcastMsg(MsgTalkerStop(header_v3.tg, header_v3.talker),
+        ReflectorClient::mkAndFilter(
+          ge_v2_client_filter,
+          ReflectorClient::mkOrFilter(
+            ReflectorClient::TgFilter(header_v3.tg),
+            ReflectorClient::TgMonitorFilter(header_v3.tg))));
+
+            */
+      header_v3.tg =  ReflectorTrunkManager::instance()->get_tg_from_dest_table(header_v3.tg,addr.toString());
+
+       broadcastMsg(MsgTalkerStop(header_v3.tg, header_v3.talker),
+           ReflectorClient::mkAndFilter(
+               ge_v2_client_filter,
+               ReflectorClient::mkOrFilter(
+                   ReflectorClient::TgFilter(header_v3.tg),
+                   ReflectorClient::TgFilter(header_v3.tg))));
+            
+      cout << header_v3.talker << ": Talker stop on TG #" << header_v3.tg << endl;          
+
+      broadcastUdpMsg(MsgUdpFlushSamples(),
+          ReflectorClient::mkAndFilter(
+              ReflectorClient::TgFilter(header_v3.tg),
+              ReflectorClient::TgFilter(header_v3.tg)));
+
+
+         ReflectorTrunkManager::instance()->handleOutgoingAudio_resend_status_newmsg(header_v3.tg,  header_v3,  addr.toString() );
+
+   }   
+   
+   
+   //Remote QSY STAUTS 
+      if(header_v3.talker_status == 4)
+      {
+      
+          cout << header_v3.talker << ": Request QSY FROM TG #" << header_v3.tg << "to "<< header_v3.new_tg << endl;          
+        
+          // Patch for tg remap
+          // header_v3.tg =  ReflectorTrunkManager::instance()->get_tg_from_dest_table(header_v3.tg,addr.toString());
+
+          broadcastMsg(MsgRequestQsy(header_v3.new_tg),
+      ReflectorClient::mkAndFilter(
+        ge_v2_client_filter,
+        ReflectorClient::TgFilter(header_v3.tg)));
+        
+            ss.seekg(0);
+
+         ReflectorTrunkManager::instance()->handleOutgoingAudio_resend(header_v3.tg,  ss,  addr.toString() );
+
+      }
+
+        
+        
+   
+
+
+      return ;
+}
+    
 
 void Reflector::udpDatagramReceived(const IpAddress& addr, uint16_t port,
                                     void* aadptr, void *buf, int count)
@@ -1066,6 +1448,7 @@ void Reflector::udpDatagramReceived(const IpAddress& addr, uint16_t port,
       return;
     }
     client = ReflectorClient::lookup(header_v2.clientId());
+    
     if (client == nullptr)
     {
       std::cerr << "*** WARNING: Incoming V2 UDP datagram from " << addr << ":"
@@ -1164,20 +1547,56 @@ void Reflector::udpDatagramReceived(const IpAddress& addr, uint16_t port,
       if (!client->isBlocked())
       {
         MsgUdpAudio msg;
+        MsgUdpAudio_trunk  msg_trunk;
         if (!msg.unpack(ss))
         {
           cerr << "*** WARNING[" << client->callsign()
                << "]: Could not unpack incoming MsgUdpAudioV1 message" << endl;
           return;
         }
-        uint32_t tg = TGHandler::instance()->TGForClient(client);
+         msg_trunk.audioData() = msg.audioData();  // vector copy
+
+        
+        // Kernel
+
+
+    uint32_t tg = TGHandler::instance()->TGForClient(client);
+        
+    // create a audio poaket to trunk
+    msg_trunk.tg = tg;
+    /*
+
+
+    ReflectorUdpMsgV2 header(msg_trunk.type(), client->clientId(),
+    client->udpCipherIVCntrNext() & 0xffff);
+
+    */
+
+  /*
+  
+      ReflectorUdpMsgV2 header(msg_trunk.type(), 0,
+        0 & 0xffff);
+
+
+    ostringstream ss;
+    assert(header.pack(ss) && msg_trunk.pack(ss));
+
+  */
+
+   	    
         if (!msg.audioData().empty() && (tg > 0))
         {
+        
           ReflectorClient* talker = TGHandler::instance()->talkerForTG(tg);
           if (talker == 0)
           {
             TGHandler::instance()->setTalkerForTG(tg, client);
+            /*
             talker = TGHandler::instance()->talkerForTG(tg);
+
+            ReflectorTrunkManager::instance()->handleOutgoingAudio(tg,ss);
+            */
+            
           }
           if (talker == client)
           {
@@ -1186,6 +1605,11 @@ void Reflector::udpDatagramReceived(const IpAddress& addr, uint16_t port,
                 ReflectorClient::mkAndFilter(
                   ReflectorClient::ExceptFilter(client),
                   ReflectorClient::TgFilter(tg)));
+                  
+            
+
+            //ReflectorTrunkManager::instance()->handleOutgoingAudio(tg,ss);
+            ReflectorTrunkManager::instance()->handleOutgoingAudio_width_remap(tg, msg_trunk);
             //broadcastUdpMsgExcept(tg, client, msg,
             //    ProtoVerRange(ProtoVer(0, 6),
             //                  ProtoVer(1, ProtoVer::max().minor())));
@@ -1318,6 +1742,22 @@ void Reflector::onTalkerUpdated(uint32_t tg, ReflectorClient* old_talker,
           ReflectorClient::mkAndFilter(
             ReflectorClient::TgFilter(tg),
             ReflectorClient::ExceptFilter(old_talker)));
+            
+    MSG_Trunk_Change msg_trunk1;
+    msg_trunk1.talker_status=1;
+    msg_trunk1.tg =tg;
+    msg_trunk1.talker = old_talker->callsign();
+    
+    // create a audio poaket to trunk
+    msg_trunk1.tg = tg;
+//    ReflectorUdpMsgV2 header1(msg_trunk1.type(), old_talker->clientId(),
+//    old_talker->udpCipherIVCntrNext() & 0xffff);
+
+    ReflectorTrunkManager::instance()->handleOutgoingMessage_width_remap(tg,msg_trunk1);
+    
+    
+            
+            
   }
   if (new_talker != 0)
   {
@@ -1329,6 +1769,26 @@ void Reflector::onTalkerUpdated(uint32_t tg, ReflectorClient* old_talker,
           ReflectorClient::mkOrFilter(
             ReflectorClient::TgFilter(tg),
             ReflectorClient::TgMonitorFilter(tg))));
+            
+            
+    MSG_Trunk_Change msg_trunk;
+    msg_trunk.talker_status=2;
+    msg_trunk.tg =tg;
+    msg_trunk.talker = new_talker->callsign();
+    
+    // create a audio poaket to trunk
+    msg_trunk.tg = tg;
+   // ReflectorUdpMsgV2 header(msg_trunk.type(), new_talker->clientId(),
+   // new_talker->udpCipherIVCntrNext() & 0xffff);
+/*ReflectorUdpMsgV2 header(msg_trunk.type(), 0,
+   0 & 0xffff);  
+    
+    ostringstream ss;
+    assert(header.pack(ss) && msg_trunk.pack(ss));
+    */
+    ReflectorTrunkManager::instance()->handleOutgoingMessage_width_remap(tg, msg_trunk);
+
+            
     if (tg == tgForV1Clients())
     {
       broadcastMsg(MsgTalkerStartV1(new_talker->callsign()), v1_client_filter);
@@ -1406,6 +1866,29 @@ void Reflector::onRequestAutoQsy(uint32_t from_tg)
       ReflectorClient::mkAndFilter(
         ge_v2_client_filter,
         ReflectorClient::TgFilter(from_tg)));
+      
+      
+    MSG_Trunk_Change msg_trunk;
+    msg_trunk.talker_status=4;
+    msg_trunk.tg =from_tg;
+    msg_trunk.new_tg = tg;
+
+    
+    // create a audio poaket to trunk
+
+    ReflectorUdpMsgV2 header(msg_trunk.type(), 0,
+    0 & 0xffff);
+    ostringstream ss;
+    assert(header.pack(ss) && msg_trunk.pack(ss));
+    ReflectorTrunkManager::instance()->handleOutgoingAudio(tg,ss);
+    
+      
+        
+        
+        
+        
+        
+        
 } /* Reflector::onRequestAutoQsy */
 
 
@@ -1427,6 +1910,10 @@ uint32_t Reflector::nextRandomQsyTg(void)
       m_random_qsy_tg+1 : m_random_qsy_lo;
     if (TGHandler::instance()->clientsForTG(m_random_qsy_tg).empty())
     {
+    
+    
+    
+    
       return m_random_qsy_tg;
     }
   }
@@ -2508,6 +2995,77 @@ std::string Reflector::formatCerts(bool signedCerts, bool pendingCerts)
   ss << "-----------------------------------------------\n";
   return ss.str();
 } /* Reflector::formatCerts */
+
+
+void Reflector::send_trunk_tg_filter_message()
+{
+
+    /*
+    Json::StreamWriterBuilder builder;
+    std::cout << "Test message\r\n";
+    std::string output = Json::writeString(builder, m_status);
+    std::cout << output << std::endl;
+    */
+
+
+    std::vector<int> result;
+
+    const Json::Value& nodes = m_status["nodes"];
+    if (!nodes.isObject())
+        return;
+
+    // Loop through all nodes
+    for (const auto& nodeName : nodes.getMemberNames())
+    {
+        const Json::Value& node = nodes[nodeName];
+
+        // Add tg
+        if (node.isMember("tg") && node["tg"].isInt())
+        {
+            if(node["tg"].asInt() >0)
+              result.push_back(node["tg"].asInt());
+        }
+
+        // Add monitoredTGs
+        if (node.isMember("monitoredTGs") && node["monitoredTGs"].isArray())
+        {
+            for (const auto& tg : node["monitoredTGs"])
+            {
+                if (tg.isInt())
+                    result.push_back(tg.asInt());
+            }
+        }
+    }
+
+
+
+    if(previousTGs_to_message != result)
+    { 
+        previousTGs_to_message = result;
+
+        std::cout << "Sending message to peer about new talkgroups to filter" << std::endl;
+/*        for (int tg : result)
+        {
+            std::cout << tg << std::endl;
+
+  
+  }
+  */
+        ReflectorTrunkManager::instance()->handleFilter_tunks(result);
+        
+
+
+    
+    }
+
+  
+
+
+
+
+
+}
+
 
 
 /*

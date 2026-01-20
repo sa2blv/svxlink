@@ -63,7 +63,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 #include "ProtoVer.h"
 #include "ReflectorClient.h"
-
+#include "ReflectorTrunkManager.h"
 
 /****************************************************************************
  *
@@ -234,6 +234,8 @@ class Reflector : public sigc::trackable
     Async::SslX509 csrReceived(Async::SslCertSigningReq& req);
 
     Json::Value& clientStatus(const std::string& callsign);
+    void send_trunk_tg_filter_message();
+
 
   protected:
 
@@ -250,6 +252,7 @@ class Reflector : public sigc::trackable
 
     FramedTcpServer*            m_srv;
     Async::EncryptedUdpSocket*  m_udp_sock;
+    Async::UdpSocket * trunk_sock;
     ReflectorClientConMap       m_client_con_map;
     Async::Config*              m_cfg;
     uint32_t                    m_tg_for_v1_clients;
@@ -278,6 +281,7 @@ class Reflector : public sigc::trackable
     std::vector<uint8_t>        m_ca_sig;
     std::string                 m_accept_cert_email;
     Json::Value                 m_status;
+    TcpServer<>* 		 Trunk_tcp;
 
     Reflector(const Reflector&);
     Reflector& operator=(const Reflector&);
@@ -313,6 +317,14 @@ class Reflector : public sigc::trackable
     std::vector<CertInfo> getAllCerts(void);
     std::vector<CertInfo> getAllPendingCSRs(void);
     std::string formatCerts(bool signedCerts=true, bool pendingCerts=true);
+    
+    std::unique_ptr<ReflectorTrunkManager> trunkMgr;  // trunk  
+    void on_trunk_udp_data_recived(const IpAddress& addr, uint16_t port,void *buf, int count);
+    void broadcastMsg_from_trunk(const ReflectorUdpMsg& msg);
+    void Trunk_onClientDisconnected(TcpConnection *con, TcpConnection::DisconnectReason reason);
+    int  Trunk_onDataReceived(TcpConnection *con, void *buf, int count);
+    void Trunk_onClientConnected(TcpConnection *con);
+    std::vector<int> previousTGs_to_message;
 };  /* class Reflector */
 
 
