@@ -290,10 +290,7 @@ bool Reflector::initialize(Async::Config &cfg)
     
   ReflectorTrunkManager::instance()->setConfig(m_cfg);
   ReflectorTrunkManager::instance()->init();
-  //trunkMgr = std::make_unique<ReflectorTrunkManager>();
-
-  
-  
+ 
 
   std::string listen_port("5300");
   cfg.getValue("GLOBAL", "LISTEN_PORT", listen_port);
@@ -401,72 +398,9 @@ trunk_sock = new UdpSocket(udp_listen_port_trunk);
 trunk_sock->dataReceived.connect(mem_fun(*this, &Reflector::on_trunk_udp_data_recived));
 
 
-/*
-
-
-Trunk_tcp = new TcpServer<>(std::to_string(udp_listen_port_trunk));
-Trunk_tcp->clientConnected.connect(
-mem_fun(*this, &Reflector::Trunk_onClientConnected));
-Trunk_tcp->clientDisconnected.connect(
-      mem_fun(*this, &Reflector::Trunk_onClientDisconnected));
-      
-*/
   ReflectorTrunkManager::instance()->send_hello();
   return true;
 } /* Reflector::initialize */
-
-
-
-    
-    void Reflector::Trunk_onClientConnected(TcpConnection *con)
-    {
-      cout << "Client " << con->remoteHost() << ":"
-           << con->remotePort() << " connected, "
-           << Trunk_tcp->numberOfClients() << " clients connected\n";
-        // We need ONLY to add signal for receive data to the TcpConnection
-      con->dataReceived.connect(mem_fun(*this, &Reflector::Trunk_onDataReceived));
-        // Send welcome message to the connected client */
-      con->write("Hello, client!\n", 15);
-    }
-    
-    void Reflector::Trunk_onClientDisconnected(TcpConnection *con, TcpConnection::DisconnectReason reason)
-    {
-      cout << "Client " << con->remoteHost().toString() << ":"
-           << con->remotePort() << " disconnected,"
-           << Trunk_tcp->numberOfClients() << " clients connected\n";
-      /* Don't delete the con object, the TcpServer will do it */
-    }
-    
-    int Reflector::Trunk_onDataReceived(TcpConnection *con, void *buf, int count)
-    {
-        // retreive data
-      char *str = static_cast<char *>(buf);
-      string data(str, str+count);
-      cout << data;
-      
-        // Send data back to sender
-      string dataOut = string("You said: ") + data;
-      Trunk_tcp->writeOnly(con, dataOut.c_str(), dataOut.size());
-      
-        // Other way to send to sender
-      //con->write(dataOut.c_str(), dataOut.size());
-      
-        // Send to other clients if there is more then one connected to server
-      if (Trunk_tcp->numberOfClients() > 1)
-      {
-          // Send data back to all OTHER clients
-        dataOut = string("He said : ") + data;
-        Trunk_tcp->writeExcept(con, dataOut.c_str(), dataOut.size());
-        
-          // Send data back to all clients
-        dataOut = string("To all  : ") + data;
-        Trunk_tcp->writeAll(dataOut.c_str(), dataOut.size());
-      }
-      return count;
-    }
-    
-    
-    
 
 
 void Reflector::nodeList(std::vector<std::string>& nodes) const
@@ -1110,22 +1044,6 @@ bool Reflector::udpCipherDataReceived(const IpAddress& addr, uint16_t port, void
 
 void Reflector::on_trunk_udp_data_recived(const IpAddress& addr, uint16_t port, void *buf, int count)
 {
-    /*
-   if(ReflectorTrunkManager::instance()->is_ip_allowed(  addr.toString())  == 0)
-   {
-    return ;
-   }
-
-  ReflectorUdpMsg header;
-
-
-
-  
-  stringstream ss;
-  ss.write(reinterpret_cast<const char *>(buf), static_cast<size_t>(count));
-  ReflectorUdpMsgV2 header_v2a;
-
-  */
 
     if (!ReflectorTrunkManager::instance()
         ->is_ip_allowed(addr.toString())) {
@@ -1204,7 +1122,6 @@ void Reflector::on_trunk_udp_data_recived(const IpAddress& addr, uint16_t port, 
   {
       if (header_v4.type() == 131)
       {
-    //      std::cout << "Message from " << header_v4.trunkid << endl;  
           ReflectorTrunkManager::instance()->incomming_filter(header_v4.Talkgroups,header_v4.trunkid);
 
 //          return;
@@ -1229,20 +1146,16 @@ void Reflector::on_trunk_udp_data_recived(const IpAddress& addr, uint16_t port, 
 	  return;
 	}
 	
-	// std::cout << "tg: " << msg.tg << ", msg.type: " << header_v2.type() << std::endl;
 
 
 	if (!msg.audioData().empty())
 	{
-
-	  	//broadcastMsg_from_trunk(msg);
 	   // Send message to local nodes	
 
-           msg.tg =  ReflectorTrunkManager::instance()->get_tg_from_dest_table(msg.tg,addr.toString());
+       msg.tg =  ReflectorTrunkManager::instance()->get_tg_from_dest_table(msg.tg,addr.toString());
 
 	   broadcastUdpMsg(msg,ReflectorClient::TgFilter( msg.tg));
            // Send to other   
-//       ReflectorTrunkManager::instance()->handleOutgoingAudio_resend( msg.tg,  ss,  addr.toString() );
         ReflectorTrunkManager::instance()->handleOutgoingAudio_resend_newmsg( msg.tg,  msg,  addr.toString() );
 
 
@@ -1274,9 +1187,6 @@ void Reflector::on_trunk_udp_data_recived(const IpAddress& addr, uint16_t port, 
 	  return;
 	}
 	
-
-  // std::cout <<"Packet data "<<  header_v3.talker_status << "tg"<< header_v3.tg <<  "talker" << header_v3.talker  << "\r\n";
-
    if(header_v3.talker_status == 2)
    {
 
@@ -1299,17 +1209,9 @@ void Reflector::on_trunk_udp_data_recived(const IpAddress& addr, uint16_t port, 
    if(header_v3.talker_status == 1)
    {
     
-       /*broadcastMsg(MsgTalkerStop(header_v3.tg, header_v3.talker),
-        ReflectorClient::mkAndFilter(
-          ge_v2_client_filter,
-          ReflectorClient::mkOrFilter(
-            ReflectorClient::TgFilter(header_v3.tg),
-            ReflectorClient::TgMonitorFilter(header_v3.tg))));
-
-            */
       header_v3.tg =  ReflectorTrunkManager::instance()->get_tg_from_dest_table(header_v3.tg,addr.toString());
 
-       broadcastMsg(MsgTalkerStop(header_v3.tg, header_v3.talker),
+      broadcastMsg(MsgTalkerStop(header_v3.tg, header_v3.talker),
            ReflectorClient::mkAndFilter(
                ge_v2_client_filter,
                ReflectorClient::mkOrFilter(
@@ -1334,10 +1236,7 @@ void Reflector::on_trunk_udp_data_recived(const IpAddress& addr, uint16_t port, 
       {
       
           cout << header_v3.talker << ": Request QSY FROM TG #" << header_v3.tg << "to "<< header_v3.new_tg << endl;          
-        
-          // Patch for tg remap
-          // header_v3.tg =  ReflectorTrunkManager::instance()->get_tg_from_dest_table(header_v3.tg,addr.toString());
-
+      
           broadcastMsg(MsgRequestQsy(header_v3.new_tg),
       ReflectorClient::mkAndFilter(
         ge_v2_client_filter,
@@ -1562,27 +1461,8 @@ void Reflector::udpDatagramReceived(const IpAddress& addr, uint16_t port,
 
     uint32_t tg = TGHandler::instance()->TGForClient(client);
         
-    // create a audio poaket to trunk
-    msg_trunk.tg = tg;
-    /*
-
-
-    ReflectorUdpMsgV2 header(msg_trunk.type(), client->clientId(),
-    client->udpCipherIVCntrNext() & 0xffff);
-
-    */
-
-  /*
-  
-      ReflectorUdpMsgV2 header(msg_trunk.type(), 0,
-        0 & 0xffff);
-
-
-    ostringstream ss;
-    assert(header.pack(ss) && msg_trunk.pack(ss));
-
-  */
-
+        // create a audio poaket to trunk
+        msg_trunk.tg = tg;
    	    
         if (!msg.audioData().empty() && (tg > 0))
         {
@@ -1605,17 +1485,9 @@ void Reflector::udpDatagramReceived(const IpAddress& addr, uint16_t port,
                 ReflectorClient::mkAndFilter(
                   ReflectorClient::ExceptFilter(client),
                   ReflectorClient::TgFilter(tg)));
-                  
-            
 
-            //ReflectorTrunkManager::instance()->handleOutgoingAudio(tg,ss);
             ReflectorTrunkManager::instance()->handleOutgoingAudio_width_remap(tg, msg_trunk);
-            //broadcastUdpMsgExcept(tg, client, msg,
-            //    ProtoVerRange(ProtoVer(0, 6),
-            //                  ProtoVer(1, ProtoVer::max().minor())));
-            //MsgUdpAudio msg_v2(msg);
-            //broadcastUdpMsgExcept(tg, client, msg_v2,
-            //    ProtoVerRange(ProtoVer(2, 0), ProtoVer::max()));
+
           }
         }
       }
@@ -1750,8 +1622,7 @@ void Reflector::onTalkerUpdated(uint32_t tg, ReflectorClient* old_talker,
     
     // create a audio poaket to trunk
     msg_trunk1.tg = tg;
-//    ReflectorUdpMsgV2 header1(msg_trunk1.type(), old_talker->clientId(),
-//    old_talker->udpCipherIVCntrNext() & 0xffff);
+
 
     ReflectorTrunkManager::instance()->handleOutgoingMessage_width_remap(tg,msg_trunk1);
     
@@ -1776,16 +1647,9 @@ void Reflector::onTalkerUpdated(uint32_t tg, ReflectorClient* old_talker,
     msg_trunk.tg =tg;
     msg_trunk.talker = new_talker->callsign();
     
-    // create a audio poaket to trunk
+    // create a audio packet to trunk
     msg_trunk.tg = tg;
-   // ReflectorUdpMsgV2 header(msg_trunk.type(), new_talker->clientId(),
-   // new_talker->udpCipherIVCntrNext() & 0xffff);
-/*ReflectorUdpMsgV2 header(msg_trunk.type(), 0,
-   0 & 0xffff);  
-    
-    ostringstream ss;
-    assert(header.pack(ss) && msg_trunk.pack(ss));
-    */
+
     ReflectorTrunkManager::instance()->handleOutgoingMessage_width_remap(tg, msg_trunk);
 
             

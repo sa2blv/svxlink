@@ -321,9 +321,6 @@ class Reflector : public sigc::trackable
     std::unique_ptr<ReflectorTrunkManager> trunkMgr;  // trunk  
     void on_trunk_udp_data_recived(const IpAddress& addr, uint16_t port,void *buf, int count);
     void broadcastMsg_from_trunk(const ReflectorUdpMsg& msg);
-    void Trunk_onClientDisconnected(TcpConnection *con, TcpConnection::DisconnectReason reason);
-    int  Trunk_onDataReceived(TcpConnection *con, void *buf, int count);
-    void Trunk_onClientConnected(TcpConnection *con);
     std::vector<int> previousTGs_to_message;
 };  /* class Reflector */
 
