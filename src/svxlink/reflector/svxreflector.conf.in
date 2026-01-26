@@ -81,6 +81,11 @@ GatewayId=RF-SE-CORE
 Port=5501
 Peers= RF-NO,RF-LA
 
+[MQTT]
+Server=
+Username=
+Password=
+
 
 [ReflectorTrunk]
 GatewayId=RF-SE-CORE
