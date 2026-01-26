@@ -38,6 +38,7 @@ add_executable(svxreflector
   TGHandler.cpp
   ReflectorTrunkManager.cpp   # <-- lägg till
   ReflectorClientUdp.cpp             # <-- USP
+  MQTT_message.cpp
 )
 
 
