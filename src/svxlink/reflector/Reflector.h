@@ -64,6 +64,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #include "ProtoVer.h"
 #include "ReflectorClient.h"
 #include "ReflectorTrunkManager.h"
+#include "MQTT_message.h"
 
 /****************************************************************************
  *
@@ -235,6 +236,10 @@ class Reflector : public sigc::trackable
 
     Json::Value& clientStatus(const std::string& callsign);
     void send_trunk_tg_filter_message();
+    void mqtt_send_data();
+    void mqtt_remove(std::string node);
+    std::string reflektor_trunk_id = "";
+
 
 
   protected:
@@ -322,6 +327,7 @@ class Reflector : public sigc::trackable
     void on_trunk_udp_data_recived(const IpAddress& addr, uint16_t port,void *buf, int count);
     void broadcastMsg_from_trunk(const ReflectorUdpMsg& msg);
     std::vector<int> previousTGs_to_message;
+    MQTT_message* mqtt;
 };  /* class Reflector */
 
 

@@ -527,6 +527,7 @@ void ReflectorClient::onFrameReceived(FramedTcpConnection *con,
   }
 
   m_heartbeat_rx_cnt = HEARTBEAT_RX_CNT_RESET;
+// add mqtt fix 
 
   switch (header.type())
   {
@@ -549,29 +550,37 @@ void ReflectorClient::onFrameReceived(FramedTcpConnection *con,
       break;
     case MsgSelectTG::TYPE:
       handleSelectTG(ss);
+      m_reflector->mqtt_send_data();
       break;
     case MsgTgMonitor::TYPE:
       handleTgMonitor(ss);
+      m_reflector->mqtt_send_data();
       break;
     case MsgNodeInfo::TYPE:
       handleNodeInfo(ss);
+      m_reflector->mqtt_send_data();
       break;
     case MsgSignalStrengthValues::TYPE:
       handleMsgSignalStrengthValues(ss);
+      m_reflector->mqtt_send_data();
       break;
     case MsgTxStatus::TYPE:
       handleMsgTxStatus(ss);
+      m_reflector->mqtt_send_data();
       break;
 #if 0
     case MsgNodeInfo::TYPE:
       handleNodeInfo(ss);
+      m_reflector->mqtt_send_data();
       break;
 #endif
     case MsgRequestQsy::TYPE:
       handleRequestQsy(ss);
+      m_reflector->mqtt_send_data();
       break;
     case MsgStateEvent::TYPE:
       handleStateEvent(ss);
+      m_reflector->mqtt_send_data();
       break;
     case MsgError::TYPE:
       handleMsgError(ss);
@@ -961,6 +970,9 @@ void ReflectorClient::handleNodeInfo(std::istream& is)
 
     status["protoVer"]["majorVer"] = protoVer().majorVer();
     status["protoVer"]["minorVer"] = protoVer().minorVer();
+    status["connected"] = true;
+    status["Reflector"] = m_reflector->reflektor_trunk_id;
+
     setMonitoredTGs(m_monitored_tgs);
     setTg(m_current_tg);
     if (status.isMember("qth") && status["qth"].isArray())
@@ -1231,6 +1243,7 @@ void ReflectorClient::disconnect(void)
   m_con->disconnect();
   m_con_state = STATE_DISCONNECTED;
   m_con->disconnected(m_con, FramedTcpConnection::DR_ORDERED_DISCONNECT);
+
 } /* ReflectorClient::disconnect */
 
 

@@ -56,6 +56,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 #include <common.h>
 #include <config.h>
+#include <string>
+#include <random>
 
 
 /****************************************************************************
@@ -71,7 +73,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #include "MsgTrunkQso.h"
 #include "TGHandler.h"
 #include "ReflectorClientUdp.h"
-
+#include "MQTT_message.h"
 
 
 /****************************************************************************
@@ -182,6 +184,28 @@ namespace {
 };
 
 
+
+std::string generateClientId(int length = 8)
+{
+    const char charset[] =
+        "0123456789"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz";
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> dist(0, sizeof(charset) - 2);
+
+    std::string id;
+    id.reserve(length);
+    for (int i = 0; i < length; ++i)
+        id += charset[dist(gen)];
+
+    return "client_" + id;  // optional prefix
+}
+
+
+
 /****************************************************************************
  *
  * Exported Global Variables
@@ -279,6 +303,8 @@ Reflector::~Reflector(void)
   ReflectorClient::cleanup();
   delete TGHandler::instance();
   delete ReflectorTrunkManager::instance();
+  MQTT_message::instance()->stopBufferThread();
+
 } /* Reflector::~Reflector */
 
 
@@ -290,6 +316,8 @@ bool Reflector::initialize(Async::Config &cfg)
     
   ReflectorTrunkManager::instance()->setConfig(m_cfg);
   ReflectorTrunkManager::instance()->init();
+  mqtt = MQTT_message::instance();
+
  
 
   std::string listen_port("5300");
@@ -396,11 +424,53 @@ uint16_t udp_listen_port_trunk = 0;
 cout << "Trunk port is on "<< udp_listen_port_trunk <<"\r\n";
 trunk_sock = new UdpSocket(udp_listen_port_trunk);
 trunk_sock->dataReceived.connect(mem_fun(*this, &Reflector::on_trunk_udp_data_recived));
+m_cfg->getValue("ReflectorTrunk", "GatewayId", reflektor_trunk_id);
 
+
+/* mqtt port */
+std::string mqtt_server_address = "";
+
+m_cfg->getValue("MQTT", "Server", mqtt_server_address);
+std::string mqtt_server_user = "";
+m_cfg->getValue("MQTT", "Username", mqtt_server_user);
+std::string mqtt_server_pass = "";
+m_cfg->getValue("MQTT", "Password", mqtt_server_pass);
+std::string clientId = "reflector_" + generateClientId(8);
+
+if (mqtt_server_address != "")
+{
+    mqtt->init(
+        mqtt_server_address,
+        clientId,
+        true,
+        mqtt_server_user, 
+        mqtt_server_pass
+    );
+    MQTT_message::instance()->startBufferThread();
+}
 
   ReflectorTrunkManager::instance()->send_hello();
   return true;
 } /* Reflector::initialize */
+
+
+void Reflector::mqtt_send_data()
+{
+
+    MQTT_message::instance()->publishBuffered(m_status["nodes"], "nodes");
+
+}
+void Reflector::mqtt_remove(std::string node)
+{
+    std::cout << "MQTT remove node :" << node << "\r\n";
+
+    m_status["nodes"][node]["connected"] = false;
+    MQTT_message::instance()->publishBufferedFull(m_status["nodes"], "nodes");
+    //MQTT_message::instance()->removeNode(baseTopic);
+
+}
+
+
 
 
 void Reflector::nodeList(std::vector<std::string>& nodes) const
@@ -936,8 +1006,10 @@ void Reflector::clientDisconnected(Async::FramedTcpConnection *con,
 
   TGHandler::instance()->removeClient(client);
 
+
   if (!client->callsign().empty())
   {
+    mqtt_remove(client->callsign());
     cout << client->callsign() << ": ";
   }
   else

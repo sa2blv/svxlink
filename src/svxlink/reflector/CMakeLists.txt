@@ -19,8 +19,15 @@ pkg_check_modules (JSONCPP REQUIRED jsoncpp)
 include_directories(${JSONCPP_INCLUDE_DIRS})
 set(LIBS ${LIBS} ${JSONCPP_LIBRARIES})
 
+set(LIBS ${LIBS} paho-mqttpp3 paho-mqtt3a)
+
+
 # Add project libraries
 set(LIBS asynccpp asyncaudio asynccore svxmisc ${LIBS})
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Build the executable
 add_executable(svxreflector

@@ -2,7 +2,7 @@
 @file	 RefletkorTrunkManager.cpp
 @brief   The Trunk service class
 @author  Peter Lundberg / SA2BLV
-@date	 2017-02-11
+@date	 2026-01-11
 
 \verbatim
 SvxReflector - An Trunk for  svxreflector for connecting SvxLink Servers
