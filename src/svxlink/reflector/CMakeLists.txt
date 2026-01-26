@@ -9,6 +9,7 @@ add_definitions(${POPT_DEFINITIONS})
 #set(LIBS ${LIBS} ${GCRYPT_LIBRARIES})
 #include_directories(${GCRYPT_INCLUDE_DIRS})
 #add_definitions(${GCRYPT_DEFINITIONS})
+set(LIBS ${LIBS} paho-mqttpp3 paho-mqtt3a)
 
 # Find jsoncpp library
 #find_package(jsoncpp REQUIRED)
