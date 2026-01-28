@@ -273,8 +273,7 @@ void MQTT_message::publishBuffered(const Json::Value& newVal, const std::string&
     bufferCv_.notify_all();
 }
 
-void MQTT_message::publishBufferedFull(const Json::Value& newVal,
-    const std::string& baseTopic)
+void MQTT_message::publishBufferedFull(const Json::Value& newVal,const std::string& baseTopic)
 {
     std::lock_guard<std::mutex> lock(bufferMutex_);
     buffer_ = newVal;
@@ -374,5 +373,32 @@ void MQTT_message::markAllTopicsEmpty(const Json::Value& node,
     }
     else {
         diffs[prefix] = "";
+    }
+}
+
+
+void MQTT_message::publishJsonTreeFull(
+    const Json::Value& node,
+    const std::string& topic)
+{
+    if (node.isObject()) {
+        for (const auto& key : node.getMemberNames()) {
+            publishJsonTreeFull(
+                node[key],
+                topic.empty() ? key : topic + "/" + key
+            );
+        }
+    }
+    else if (node.isArray()) {
+        for (Json::ArrayIndex i = 0; i < node.size(); ++i) {
+            publishJsonTreeFull(
+                node[i],
+                topic + "/" + std::to_string(i)
+            );
+        }
+    }
+    else {
+        // primitive
+        publish(topic, node.asString(), 1, true);
     }
 }

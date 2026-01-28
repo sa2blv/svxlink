@@ -48,6 +48,8 @@ public:
     void publishBufferedFull(const Json::Value& newVal,
         const std::string& baseTopic);
 
+    void publishJsonTreeFull(const Json::Value& value, const std::string& baseTopic);
+
 private:
     MQTT_message();
     ~MQTT_message();
