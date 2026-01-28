@@ -49,6 +49,7 @@ public:
         const std::string& baseTopic);
 
     void publishJsonTreeFull(const Json::Value& value, const std::string& baseTopic);
+    void publishJsonTreeFullAsync(Json::Value node, std::string topic);
 
 private:
     MQTT_message();

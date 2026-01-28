@@ -473,13 +473,13 @@ void Reflector::mqtt_remove(std::string node)
     std::cout << "MQTT remove node :" << node << "\r\n";
 
     m_status["nodes"][node]["connected"] = false;
-    MQTT_message::instance()->publishJsonTreeFull(m_status["nodes"], "nodes");
+    MQTT_message::instance()->publishJsonTreeFullAsync(m_status["nodes"], "nodes");
     //MQTT_message::instance()->removeNode(baseTopic);
 
 }
 void Reflector::mqtt_sync(Timer* t)
 {
-    MQTT_message::instance()->publishJsonTreeFull(m_status["nodes"], "nodes");
+    MQTT_message::instance()->publishJsonTreeFullAsync(m_status["nodes"], "nodes");
 
     Json::Value mqtt_heartbeat;
     auto now = std::chrono::system_clock::now();
@@ -487,7 +487,7 @@ void Reflector::mqtt_sync(Timer* t)
     std::string currentTime = std::ctime(&now_c); // has '\n'
 
     mqtt_heartbeat[reflektor_trunk_id]["lastsync"] = currentTime;
-    MQTT_message::instance()->publishJsonTreeFull(mqtt_heartbeat, "reflectors");
+    MQTT_message::instance()->publishJsonTreeFullAsync(mqtt_heartbeat, "reflectors");
 }
 
 

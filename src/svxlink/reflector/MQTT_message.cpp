@@ -376,6 +376,19 @@ void MQTT_message::markAllTopicsEmpty(const Json::Value& node,
     }
 }
 
+void MQTT_message::publishJsonTreeFullAsync(
+    Json::Value node,
+    std::string topic)
+{
+    std::thread(
+        [this, node = std::move(node), topic = std::move(topic)]() {
+            publishJsonTreeFull(node, topic);
+        }
+    ).detach();
+}
+
+
+
 
 void MQTT_message::publishJsonTreeFull(
     const Json::Value& node,
