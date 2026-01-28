@@ -286,7 +286,7 @@ class Reflector : public sigc::trackable
     std::vector<uint8_t>        m_ca_sig;
     std::string                 m_accept_cert_email;
     Json::Value                 m_status;
-    TcpServer<>* 		 Trunk_tcp;
+    TcpServer<>* 		        Trunk_tcp;
 
     Reflector(const Reflector&);
     Reflector& operator=(const Reflector&);
@@ -328,6 +328,9 @@ class Reflector : public sigc::trackable
     void broadcastMsg_from_trunk(const ReflectorUdpMsg& msg);
     std::vector<int> previousTGs_to_message;
     MQTT_message* mqtt;
+    Timer* timer_mqtt;
+    void mqtt_sync(Timer* t);
+
 };  /* class Reflector */
 
 

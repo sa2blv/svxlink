@@ -58,6 +58,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #include <config.h>
 #include <string>
 #include <random>
+#include <chrono>
+#include <ctime>
 
 
 /****************************************************************************
@@ -303,6 +305,7 @@ Reflector::~Reflector(void)
   ReflectorClient::cleanup();
   delete TGHandler::instance();
   delete ReflectorTrunkManager::instance();
+  delete timer_mqtt;
   MQTT_message::instance()->stopBufferThread();
 
 } /* Reflector::~Reflector */
@@ -447,6 +450,11 @@ if (mqtt_server_address != "")
         mqtt_server_pass
     );
     MQTT_message::instance()->startBufferThread();
+
+    //sync_message
+    timer_mqtt = new Timer(5000, Timer::TYPE_PERIODIC);
+    timer_mqtt->expired.connect(mem_fun(*this, &Reflector::mqtt_sync));
+
 }
 
   ReflectorTrunkManager::instance()->send_hello();
@@ -469,7 +477,18 @@ void Reflector::mqtt_remove(std::string node)
     //MQTT_message::instance()->removeNode(baseTopic);
 
 }
+void Reflector::mqtt_sync(Timer* t)
+{
+    MQTT_message::instance()->publishBufferedFull(m_status["nodes"], "nodes");
 
+    Json::Value mqtt_heartbeat;
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+    std::string currentTime = std::ctime(&now_c); // has '\n'
+
+    mqtt_heartbeat[reflektor_trunk_id]["lastsync"] = currentTime;
+    MQTT_message::instance()->publishBufferedFull(mqtt_heartbeat, "reflectors");
+}
 
 
 
