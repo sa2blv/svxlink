@@ -210,15 +210,11 @@ void MQTT_message::message_arrived(mqtt::const_message_ptr msg)
         parts.push_back(token);
     }
 
-    for (auto part : parts) {
-        std::cout << part << std::endl;
-    }
-
 
     if (parts.size() > 2 && (parts[1] == "all" || parts[1] == my_id)
         && parts[2] == "PTY")
     {
-        std::cout << "Send message to pty \r\n";
+//        std::cout << "Send message to pty \r\n";
         m_reflector->mqtt_pty_received(msg->to_string());
     }
 }
