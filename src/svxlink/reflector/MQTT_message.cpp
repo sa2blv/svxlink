@@ -39,7 +39,8 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #include <json/json.h>
 #include <map>
 #include <set>
-
+#include <sstream>
+#include "Reflector.h" 
 
  /****************************************************************************
   *
@@ -160,6 +161,8 @@ bool MQTT_message::publish(const std::string& topic,
 
 bool MQTT_message::subscribe(const std::string& topic, int qos)
 {
+
+    std::cout << "MQTT: Subscribing to " << topic << " \r\n";
     if (!enabled_ || !connected_)
         return false;
 
@@ -178,6 +181,10 @@ void MQTT_message::connected(const std::string& cause)
 {
     connected_ = true;
     std::cout << "MQTT connected" << std::endl;
+
+    MQTT_message::instance()->subscribe("reflector_ctrl/" + my_id + "/#", 0);
+    MQTT_message::instance()->subscribe("reflector_ctrl/all/#", 0);
+
 }
 
 void MQTT_message::connection_lost(const std::string& cause)
@@ -193,6 +200,27 @@ void MQTT_message::message_arrived(mqtt::const_message_ptr msg)
         << " -> "
         << msg->to_string()
         << std::endl;
+
+    std::string topic = msg->get_topic();
+    std::vector<std::string> parts;
+    std::stringstream ss(topic);
+    std::string token;
+
+    while (std::getline(ss, token, '/')) {
+        parts.push_back(token);
+    }
+
+    for (auto part : parts) {
+        std::cout << part << std::endl;
+    }
+
+
+    if (parts.size() > 2 && (parts[1] == "all" || parts[1] == my_id)
+        && parts[2] == "PTY")
+    {
+        std::cout << "Send message to pty \r\n";
+        m_reflector->mqtt_pty_received(msg->to_string());
+    }
 }
 
 void MQTT_message::delivery_complete(mqtt::delivery_token_ptr)

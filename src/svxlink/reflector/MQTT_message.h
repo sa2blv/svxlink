@@ -11,6 +11,11 @@
 #include <map>
 #include <string>
 
+
+class Reflector;
+
+
+
 // Add this at the top of MQTT_message.h
 using TopicMap = std::map<std::string, std::string>;
 
@@ -50,10 +55,12 @@ public:
 
     void publishJsonTreeFull(const Json::Value& value, const std::string& baseTopic);
     void publishJsonTreeFullAsync(Json::Value node, std::string topic);
+    std::string my_id;
 
 private:
     MQTT_message();
     ~MQTT_message();
+    Reflector* m_reflector;
 
     MQTT_message(const MQTT_message&) = delete;
     MQTT_message& operator=(const MQTT_message&) = delete;

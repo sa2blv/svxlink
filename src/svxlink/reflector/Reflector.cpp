@@ -454,6 +454,9 @@ if (mqtt_server_address != "")
     //sync_message
     timer_mqtt = new Timer(5000, Timer::TYPE_PERIODIC);
     timer_mqtt->expired.connect(mem_fun(*this, &Reflector::mqtt_sync));
+    MQTT_message::instance()->my_id = reflektor_trunk_id;
+    MQTT_message::instance()->subscribe("reflector_ctrl/"+ reflektor_trunk_id +"/#", 0);
+    MQTT_message::instance()->subscribe("reflector_ctrl/all/#", 0);
 
 }
 
@@ -489,6 +492,35 @@ void Reflector::mqtt_sync(Timer* t)
     mqtt_heartbeat[reflektor_trunk_id]["lastsync"] = currentTime;
     MQTT_message::instance()->publishJsonTreeFullAsync(mqtt_heartbeat, "reflectors");
 }
+
+void Reflector::mqtt_pty_received(const std::string& data) {
+    // Convert std::string to const void* and pass size
+    ctrlPtyDataReceived_mqtt(static_cast<const void*>(data.data()), data.size());
+}
+
+void Reflector::mqtt_write(const std::string& data) {
+
+    std::string topic = "reflector_ctrl/"+ MQTT_message::instance()->my_id +"/output";
+
+    std::cout << "sending message to " << topic << "\r\n";
+
+
+    MQTT_message::instance()->publish( topic, data, 1,false);
+    /*
+    if (reflektor_trunk_id.empty()) {
+        std::cerr << "Error: reflektor_trunk_id is empty!" << std::endl;
+        return;
+    }
+
+    Json::Value mqtt_msg;
+    mqtt_msg[reflektor_trunk_id] = data; // safe now
+
+    MQTT_message::instance()->publishJsonTreeFullAsync(mqtt_msg, "reflectors/output");
+    */
+    }
+
+
+
 
 
 
@@ -1346,7 +1378,8 @@ void Reflector::on_trunk_udp_data_recived(const IpAddress& addr, uint16_t port, 
 
       return ;
 }
-    
+
+
 
 void Reflector::udpDatagramReceived(const IpAddress& addr, uint16_t port,
                                     void* aadptr, void *buf, int count)
@@ -2063,6 +2096,195 @@ void Reflector::ctrlPtyDataReceived(const void *buf, size_t count)
     }
     m_cmd_pty->write("OK\n");
 } /* Reflector::ctrlPtyDataReceived */
+
+void Reflector::ctrlPtyDataReceived_mqtt(const void* buf, size_t count)
+{
+    const char* ptr = reinterpret_cast<const char*>(buf);
+    const std::string cmdline(ptr, ptr + count);
+    //std::cout << "### Reflector::ctrlPtyDataReceived: " << cmdline
+    //          << std::endl;
+    std::istringstream ss(cmdline);
+    std::ostringstream errss;
+    std::string cmd;
+    if (!(ss >> cmd))
+    {
+        errss << "Invalid PTY command '" << cmdline << "'";
+        goto write_status;
+    }
+    std::transform(cmd.begin(), cmd.end(), cmd.begin(), ::toupper);
+
+    if (cmd == "CFG")
+    {
+        std::string section, tag, value;
+        ss >> section >> tag >> value;
+        if (!value.empty())
+        {
+            m_cfg->setValue(section, tag, value);
+            mqtt_write("Trying to set config : " + section + "/" +
+                tag + "=" + value + "\n");
+        }
+        else if (!tag.empty())
+        {
+            mqtt_write("Get config : " + section + "/" +
+                tag + "=\"" + m_cfg->getValue(section, tag) + "\"\n");
+        }
+        else if (!section.empty())
+        {
+            mqtt_write("Section: \n\t" + section + "\n");
+            for (const auto& tag : m_cfg->listSection(section))
+            {
+                mqtt_write("\t" + tag +
+                    "=\"" + m_cfg->getValue(section, tag) + "\"\n");
+            }
+        }
+        else
+        {
+            for (const auto& section : m_cfg->listSections())
+            {
+                mqtt_write("Section: \n\t" + section + "\n");
+                for (const auto& tag : m_cfg->listSection(section))
+                {
+                    mqtt_write("\t\t" + tag +
+                        "=\"" + m_cfg->getValue(section, tag) + "\"\n");
+                }
+                mqtt_write("\n");
+            }
+        }
+    }
+    else if (cmd == "NODE")
+    {
+        std::string subcmd, callsign;
+        unsigned blocktime;
+        if (!(ss >> subcmd >> callsign >> blocktime))
+        {
+            errss << "Invalid NODE PTY command '" << cmdline << "'. "
+                "Usage: NODE BLOCK <callsign> <blocktime seconds>";
+            goto write_status;
+        }
+        std::transform(subcmd.begin(), subcmd.end(), subcmd.begin(), ::toupper);
+        if (subcmd == "BLOCK")
+        {
+            auto node = ReflectorClient::lookup(callsign);
+            if (node == nullptr)
+            {
+                errss << "Could not find node " << callsign;
+                goto write_status;
+            }
+            node->setBlock(blocktime);
+        }
+        else
+        {
+            errss << "Invalid NODE PTY command '" << cmdline << "'. "
+                "Usage: NODE BLOCK <callsign> <blocktime seconds>";
+            goto write_status;
+        }
+    }
+    else if (cmd == "CA")
+    {
+        std::string subcmd;
+        if (!(ss >> subcmd))
+        {
+            errss << "Invalid CA PTY command '" << cmdline << "'. "
+                "Usage: CA LS|LSC|LSP|SIGN <callsign>|RM <callsign>";
+            goto write_status;
+        }
+        std::transform(subcmd.begin(), subcmd.end(), subcmd.begin(), ::toupper);
+        if (subcmd == "SIGN")
+        {
+            std::string cn;
+            if (!(ss >> cn))
+            {
+                errss << "Invalid CA SIGN PTY command '" << cmdline << "'. "
+                    "Usage: CA SIGN <callsign>";
+                goto write_status;
+            }
+            auto cert = signClientCsr(cn);
+            if (!cert.isNull())
+            {
+                m_cmd_pty->write("---------- Signed Client Certificate ----------\n");
+                m_cmd_pty->write(cert.toString());
+                m_cmd_pty->write("-----------------------------------------------\n");
+                std::cout << "---------- Signed Client Certificate ----------\n"
+                    << cert.toString()
+                    << "-----------------------------------------------"
+                    << std::endl;
+            }
+            else
+            {
+                errss << "Certificate signing failed";
+            }
+        }
+        else if (subcmd == "RM")
+        {
+            std::string cn;
+            if (!(ss >> cn))
+            {
+                errss << "Invalid CA RM PTY command '" << cmdline << "'. "
+                    "Usage: CA RM <callsign>";
+                goto write_status;
+            }
+            if (removeClientCertFiles(cn))
+            {
+                std::string msg(cn + ": Removed client certificate and CSR");
+                m_cmd_pty->write(msg + "\n");
+                std::cout << msg << std::endl;
+            }
+            else
+            {
+                errss << "Failed to remove certificate and CSR for '" << cn << "'";
+            }
+        }
+        else if (subcmd == "LS")
+        {
+            // List all certs and pending CSRs
+            std::string certs = formatCerts();
+            mqtt_write(certs);
+        }
+        else if (subcmd == "LSC")
+        {
+            // List only certificates
+            std::string certs = formatCerts(true, false);
+            mqtt_write(certs);
+        }
+        else if (subcmd == "LSP")
+        {
+            // List only pending CSRs
+            std::string certs = formatCerts(false, true);
+            mqtt_write(certs);
+        }
+        // FIXME: Implement when we have CRL support
+        //else if (subcmd == "REVOKE")
+        //{
+        //}
+        else
+        {
+            errss << "Invalid CA PTY command '" << cmdline << "'. "
+                "Usage: CA LS|LSC|LSP|SIGN <callsign>|RM <callsign>";
+            goto write_status;
+        }
+    }
+    else
+    {
+        errss << "Valid commands are: CFG, NODE, CA\n"
+            << "Usage:\n"
+            << "CFG <section> <tag> <value>\n"
+            << "NODE BLOCK <callsign> <blocktime seconds>\n"
+            << "CA LS|LSC|LSP|SIGN <callsign>|RM <callsign>\n"
+            << "\nEmpty CFG lists all configuration";
+    }
+
+write_status:
+    if (!errss.str().empty())
+    {
+       // std::cerr << "*** ERROR: " << errss.str() << std::endl;
+        mqtt_write(std::string("ERR:") + errss.str() + "\n");
+        return;
+    }
+    mqtt_write("OK\n");
+} /* Reflector::ctrlPtyDataReceived_mqtt */
+
+
+
 
 
 void Reflector::cfgUpdated(const std::string& section, const std::string& tag)

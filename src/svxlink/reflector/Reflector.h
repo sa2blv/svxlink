@@ -66,6 +66,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 #include "ReflectorTrunkManager.h"
 #include "MQTT_message.h"
 
+
 /****************************************************************************
  *
  * Forward declarations
@@ -239,6 +240,7 @@ class Reflector : public sigc::trackable
     void mqtt_send_data();
     void mqtt_remove(std::string node);
     std::string reflektor_trunk_id = "";
+    void mqtt_pty_received(const std::string& data);
 
 
 
@@ -330,6 +332,8 @@ class Reflector : public sigc::trackable
     MQTT_message* mqtt;
     Timer* timer_mqtt;
     void mqtt_sync(Timer* t);
+    void ctrlPtyDataReceived_mqtt(const void* buf, size_t count);
+    void mqtt_write(const std::string& data);
 
 };  /* class Reflector */
 
