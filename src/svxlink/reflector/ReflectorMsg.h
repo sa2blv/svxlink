@@ -1487,14 +1487,14 @@ This namespace hold some constants, types and classes that are used when
 forming ciphered UDP datagrams.
 */
 
-class MSG_Trunk_Change : public ReflectorMsgBase<130>
+class MSG_Trunk_Change : public ReflectorMsgBase<140>
 {
 
  public:    
     int talker_status =0;
     int qsy=0;
-    int tg;
-    int new_tg;
+    int tg =0;
+    int new_tg =0;
     std::string talker;
    
 
